@@ -8,6 +8,7 @@
 *.db
 *.json_store
 productivity_store.json
+*.bat
 
 # testing
 /coverage

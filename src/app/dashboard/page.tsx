@@ -10,18 +10,17 @@ import { AIAssistantWidget } from '@/components/ai/AIAssistantWidget';
 import {
   CheckSquare,
   Flame,
-  Zap,
   Plus,
   Star,
   Timer,
   Repeat,
   Sparkles,
-  TrendingUp,
-  Calendar as CalendarIcon,
   CheckCircle2,
 } from 'lucide-react';
 import { Task, Category, Goal, Habit } from '@/lib/types';
 import Link from 'next/link';
+
+const LOCAL_STORAGE_TASKS_KEY = 'productivity_app_cached_tasks_v1';
 
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
@@ -37,11 +36,30 @@ export default function DashboardPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   useEffect(() => {
+    // 1. Instant load from localStorage
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_TASKS_KEY);
+      if (saved) {
+        setTasks(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('LocalStorage read error:', e);
+    }
+
+    // 2. Fetch fresh data from backend
     fetchDashboardData();
   }, []);
 
+  const saveTasksState = (newTasks: Task[]) => {
+    setTasks(newTasks);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_TASKS_KEY, JSON.stringify(newTasks));
+    } catch (e) {
+      console.error('LocalStorage write error:', e);
+    }
+  };
+
   const fetchDashboardData = async () => {
-    setLoading(true);
     try {
       // 1. Auth & preferences
       const authRes = await fetch('/api/auth/me');
@@ -58,10 +76,11 @@ export default function DashboardPage() {
       const tasksRes = await fetch(`/api/tasks?date=${todayStr}`);
       if (tasksRes.ok) {
         const tasksData = await tasksRes.json();
-        setTasks(tasksData.tasks || []);
+        const fetchedTasks = tasksData.tasks || [];
+        saveTasksState(fetchedTasks);
       }
 
-      // 3. Categories & Goals & Habits
+      // 3. Categories & Goals & Habits & Analytics
       const [catRes, goalRes, habitRes, analyticsRes] = await Promise.all([
         fetch('/api/categories'),
         fetch('/api/goals'),
@@ -81,56 +100,63 @@ export default function DashboardPage() {
   };
 
   const handleUpdateStatus = async (taskId: string, newStatus: Task['status']) => {
+    const updated = tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t));
+    saveTasksState(updated);
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      await fetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) {
-        fetchDashboardData();
-      }
+      fetchDashboardData();
     } catch (err) {
       console.error('Update status error:', err);
     }
   };
 
   const handleToggleSubtask = async (taskId: string, subtaskId: string, completed: boolean) => {
+    const updated = tasks.map((t) => {
+      if (t.id !== taskId) return t;
+      const subtasks = t.subtasks?.map((st) => (st.id === subtaskId ? { ...st, completed } : st)) || [];
+      return { ...t, subtasks };
+    });
+    saveTasksState(updated);
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}/subtasks`, {
+      await fetch(`/api/tasks/${taskId}/subtasks`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subtaskId, completed }),
       });
-      if (res.ok) {
-        fetchDashboardData();
-      }
+      fetchDashboardData();
     } catch (err) {
       console.error('Toggle subtask error:', err);
     }
   };
 
   const handleToggleFocus = async (taskId: string, isFocus: boolean) => {
+    const updated = tasks.map((t) => (t.id === taskId ? { ...t, is_focus_today: isFocus } : t));
+    saveTasksState(updated);
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      await fetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_focus_today: isFocus }),
       });
-      if (res.ok) {
-        fetchDashboardData();
-      }
+      fetchDashboardData();
     } catch (err) {
       console.error('Toggle focus error:', err);
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
+    const updated = tasks.filter((t) => t.id !== taskId);
+    saveTasksState(updated);
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setTasks(tasks.filter((t) => t.id !== taskId));
-      }
+      await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     } catch (err) {
       console.error('Delete task error:', err);
     }
@@ -149,6 +175,14 @@ export default function DashboardPage() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        if (data.task) {
+          if (isEdit) {
+            saveTasksState(tasks.map((t) => (t.id === data.task.id ? data.task : t)));
+          } else {
+            saveTasksState([data.task, ...tasks]);
+          }
+        }
         fetchDashboardData();
       }
     } catch (err) {
@@ -171,7 +205,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Rotating contextual motivational message
   const getMotivationalMessage = () => {
     const streak = analytics?.streakInfo?.currentStreak || 0;
     const score = analytics?.dailyScore;

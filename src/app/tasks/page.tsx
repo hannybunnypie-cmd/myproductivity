@@ -6,8 +6,10 @@ import { TaskCard } from '@/components/tasks/TaskCard';
 import { TaskModal } from '@/components/tasks/TaskModal';
 import { EmptyState } from '@/components/common/EmptyState';
 import { AIAssistantWidget } from '@/components/ai/AIAssistantWidget';
-import { CheckSquare, Plus, Filter, Search, Calendar, Tag } from 'lucide-react';
+import { CheckSquare, Plus, Search } from 'lucide-react';
 import { Task, Category, Goal } from '@/lib/types';
+
+const LOCAL_STORAGE_TASKS_KEY = 'productivity_app_cached_tasks_v1';
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -23,11 +25,30 @@ export default function TasksPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   useEffect(() => {
+    // 1. Instant load from localStorage
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_TASKS_KEY);
+      if (saved) {
+        setTasks(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('LocalStorage read error:', e);
+    }
+
+    // 2. Fetch fresh data from backend API
     fetchTasksData();
   }, []);
 
+  const saveTasksState = (newTasks: Task[]) => {
+    setTasks(newTasks);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_TASKS_KEY, JSON.stringify(newTasks));
+    } catch (e) {
+      console.error('LocalStorage write error:', e);
+    }
+  };
+
   const fetchTasksData = async () => {
-    setLoading(true);
     try {
       const [tasksRes, catRes, goalRes] = await Promise.all([
         fetch('/api/tasks'),
@@ -35,7 +56,11 @@ export default function TasksPage() {
         fetch('/api/goals'),
       ]);
 
-      if (tasksRes.ok) setTasks((await tasksRes.json()).tasks || []);
+      if (tasksRes.ok) {
+        const data = await tasksRes.json();
+        const fetchedTasks = data.tasks || [];
+        saveTasksState(fetchedTasks);
+      }
       if (catRes.ok) setCategories((await catRes.json()).categories || []);
       if (goalRes.ok) setGoals((await goalRes.json()).goals || []);
     } catch (err) {
@@ -46,48 +71,63 @@ export default function TasksPage() {
   };
 
   const handleUpdateStatus = async (taskId: string, newStatus: Task['status']) => {
+    const updated = tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t));
+    saveTasksState(updated);
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      await fetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) fetchTasksData();
+      fetchTasksData();
     } catch (err) {
       console.error('Update status error:', err);
     }
   };
 
   const handleToggleSubtask = async (taskId: string, subtaskId: string, completed: boolean) => {
+    const updated = tasks.map((t) => {
+      if (t.id !== taskId) return t;
+      const subtasks = t.subtasks?.map((st) => (st.id === subtaskId ? { ...st, completed } : st)) || [];
+      return { ...t, subtasks };
+    });
+    saveTasksState(updated);
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}/subtasks`, {
+      await fetch(`/api/tasks/${taskId}/subtasks`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subtaskId, completed }),
       });
-      if (res.ok) fetchTasksData();
+      fetchTasksData();
     } catch (err) {
       console.error('Toggle subtask error:', err);
     }
   };
 
   const handleToggleFocus = async (taskId: string, isFocus: boolean) => {
+    const updated = tasks.map((t) => (t.id === taskId ? { ...t, is_focus_today: isFocus } : t));
+    saveTasksState(updated);
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      await fetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_focus_today: isFocus }),
       });
-      if (res.ok) fetchTasksData();
+      fetchTasksData();
     } catch (err) {
       console.error('Toggle focus error:', err);
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
+    const updated = tasks.filter((t) => t.id !== taskId);
+    saveTasksState(updated);
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
-      if (res.ok) setTasks(tasks.filter((t) => t.id !== taskId));
+      await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     } catch (err) {
       console.error('Delete task error:', err);
     }
@@ -105,7 +145,17 @@ export default function TasksPage() {
         body: JSON.stringify(taskData),
       });
 
-      if (res.ok) fetchTasksData();
+      if (res.ok) {
+        const data = await res.json();
+        if (data.task) {
+          if (isEdit) {
+            saveTasksState(tasks.map((t) => (t.id === data.task.id ? data.task : t)));
+          } else {
+            saveTasksState([data.task, ...tasks]);
+          }
+        }
+        fetchTasksData();
+      }
     } catch (err) {
       console.error('Save task error:', err);
     }

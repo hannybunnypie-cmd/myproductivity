@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { Task, Subtask } from '@/lib/types';
-import { awardXP } from '@/lib/gamification';
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -23,16 +22,16 @@ export async function GET(req: Request) {
   const params: any[] = [user.id];
 
   if (dateStr) {
-    query += ` AND t.due_date = ?`;
+    query += ` AND (t.due_date = ? OR t.is_focus_today = 1 OR t.status != 'completed')`;
     params.push(dateStr);
   }
 
-  if (statusFilter) {
+  if (statusFilter && statusFilter !== 'all') {
     query += ` AND t.status = ?`;
     params.push(statusFilter);
   }
 
-  if (categoryFilter) {
+  if (categoryFilter && categoryFilter !== 'all') {
     query += ` AND t.category_id = ?`;
     params.push(categoryFilter);
   }
@@ -44,13 +43,13 @@ export async function GET(req: Request) {
   // Attach subtasks & parse json fields
   const tasks: Task[] = rows.map((r) => {
     const subtasks = db
-      .prepare('SELECT * FROM subtasks WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC')
-      .all(r.id, user.id) as Subtask[];
+      .prepare('SELECT * FROM subtasks WHERE task_id = ? ORDER BY created_at ASC')
+      .all(r.id) as Subtask[];
 
     return {
       ...r,
       is_focus_today: Boolean(r.is_focus_today),
-      tags: JSON.parse(r.tags || '[]'),
+      tags: typeof r.tags === 'string' ? JSON.parse(r.tags || '[]') : (r.tags || []),
       subtasks: subtasks.map((s) => ({ ...s, completed: Boolean(s.completed) })),
     };
   });
@@ -134,7 +133,7 @@ export async function POST(req: Request) {
       task: {
         ...createdTask,
         is_focus_today: Boolean(createdTask.is_focus_today),
-        tags: JSON.parse(createdTask.tags || '[]'),
+        tags: typeof createdTask.tags === 'string' ? JSON.parse(createdTask.tags || '[]') : (createdTask.tags || []),
         subtasks: insertedSubtasks.map((s) => ({ ...s, completed: Boolean(s.completed) })),
       },
     });

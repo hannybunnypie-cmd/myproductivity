@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
 import {
   User,
   UserPreferences,
@@ -78,6 +79,9 @@ function loadStore(): SchemaStore {
     storeMemory = createEmptyStore();
   }
 
+  // Ensure default permanent user hannybunnpie@gmail.com exists
+  ensurePermanentUser(storeMemory!);
+
   // Populate achievements if empty
   if (!storeMemory!.achievements || storeMemory!.achievements.length === 0) {
     storeMemory!.achievements = MASTER_ACHIEVEMENTS.map((ach) => ({
@@ -88,6 +92,97 @@ function loadStore(): SchemaStore {
   }
 
   return storeMemory!;
+}
+
+function ensurePermanentUser(s: SchemaStore) {
+  const targetEmail = 'hannybunnpie@gmail.com';
+  let permUser = s.users.find((u) => u.email.toLowerCase() === targetEmail);
+
+  if (!permUser) {
+    // Synchronously hash password '123456'
+    const passwordHash = bcrypt.hashSync('123456', 10);
+    const userId = 'u_hannybunnpie';
+    const now = new Date().toISOString();
+
+    permUser = {
+      id: userId,
+      email: targetEmail,
+      name: 'Hanny Bunny',
+      password_hash: passwordHash,
+      created_at: now,
+    };
+    s.users.push(permUser);
+
+    // Also add alias email hannybunnypie@gmail.com
+    s.users.push({
+      id: 'u_hannybunnypie_alias',
+      email: 'hannybunnypie@gmail.com',
+      name: 'Hanny Bunny',
+      password_hash: passwordHash,
+      created_at: now,
+    });
+
+    s.user_preferences.push({
+      user_id: userId,
+      onboarded: 1,
+      focus_areas: JSON.stringify(['Academics', 'Coding', 'Productivity']),
+      study_areas: JSON.stringify(['DSA', 'Computer Networks', 'SQL']),
+      daily_study_target_mins: 120,
+      preferred_study_time: 'morning',
+      track_meditation: 1,
+      use_pomodoro: 1,
+      pomodoro_work_mins: 25,
+      pomodoro_short_break_mins: 5,
+      pomodoro_long_break_mins: 15,
+      timezone: 'UTC',
+      theme: 'dark',
+    });
+
+    s.user_preferences.push({
+      user_id: 'u_hannybunnypie_alias',
+      onboarded: 1,
+      focus_areas: JSON.stringify(['Academics', 'Coding', 'Productivity']),
+      study_areas: JSON.stringify(['DSA', 'Computer Networks', 'SQL']),
+      daily_study_target_mins: 120,
+      preferred_study_time: 'morning',
+      track_meditation: 1,
+      use_pomodoro: 1,
+      pomodoro_work_mins: 25,
+      pomodoro_short_break_mins: 5,
+      pomodoro_long_break_mins: 15,
+      timezone: 'UTC',
+      theme: 'dark',
+    });
+
+    s.user_xp.push({ user_id: userId, total_xp: 0, level: 1 });
+    s.user_xp.push({ user_id: 'u_hannybunnypie_alias', total_xp: 0, level: 1 });
+
+    const defaultCategories = [
+      { name: 'Study / Academics', color: '#3b82f6' },
+      { name: 'Coding & Projects', color: '#10b981' },
+      { name: 'Personal Development', color: '#8b5cf6' },
+      { name: 'Health & Wellness', color: '#f59e0b' },
+    ];
+
+    for (const cat of defaultCategories) {
+      s.categories.push({
+        id: 'cat_' + Math.random().toString(36).substring(2, 8),
+        user_id: userId,
+        name: cat.name,
+        color: cat.color,
+        created_at: now,
+      });
+      s.categories.push({
+        id: 'cat_' + Math.random().toString(36).substring(2, 8),
+        user_id: 'u_hannybunnypie_alias',
+        name: cat.name,
+        color: cat.color,
+        created_at: now,
+      });
+    }
+
+    saveStore();
+  }
 }
 
 function saveStore() {

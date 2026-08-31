@@ -2,14 +2,14 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User as UserIcon } from 'lucide-react';
+import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User as UserIcon, KeyRound } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('hannybunnpie@gmail.com');
+  const [password, setPassword] = useState('123456');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -42,6 +42,12 @@ export default function LoginPage() {
     }
   };
 
+  const handleFillDemo = () => {
+    setEmail('hannybunnpie@gmail.com');
+    setPassword('123456');
+    setIsSignUp(false);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
@@ -58,6 +64,25 @@ export default function LoginPage() {
               : 'Sign in to track your personal study companion progress.'}
           </p>
         </div>
+
+        {/* Quick autofill account badge */}
+        {!isSignUp && (
+          <div
+            onClick={handleFillDemo}
+            className="p-3 rounded-2xl bg-blue-950/40 border border-blue-800/40 cursor-pointer hover:bg-blue-900/40 transition flex items-center justify-between text-xs text-blue-300"
+          >
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-blue-400" />
+              <div>
+                <p className="font-semibold text-slate-100">Permanent Login Pre-set</p>
+                <p className="text-[11px] text-blue-300/80">hannybunnpie@gmail.com • 123456</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold bg-blue-600/30 text-blue-300 px-2 py-0.5 rounded-md">
+              Autofill
+            </span>
+          </div>
+        )}
 
         {error && (
           <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/40 text-xs text-rose-300 text-center">
@@ -76,7 +101,7 @@ export default function LoginPage() {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Harini Anand"
+                  placeholder="Hanny Bunny"
                   className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -92,7 +117,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="yourname@example.com"
+                placeholder="hannybunnpie@gmail.com"
                 className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500"
               />
             </div>

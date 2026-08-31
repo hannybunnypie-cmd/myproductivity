@@ -18,12 +18,12 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { Task, Category, Goal, Habit } from '@/lib/types';
+import { getLocalStore, setLocalStore } from '@/lib/storage';
 import Link from 'next/link';
-
-const LOCAL_STORAGE_TASKS_KEY = 'productivity_app_cached_tasks_v1';
 
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState<string>('hannybunnpie@gmail.com');
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -36,57 +36,62 @@ export default function DashboardPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   useEffect(() => {
-    // 1. Instant load from localStorage
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_TASKS_KEY);
-      if (saved) {
-        setTasks(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error('LocalStorage read error:', e);
+    // 1. Initial auth check
+    fetch('/api/auth/me')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.user) {
+          setUser(data.user);
+          setUserEmail(data.user.email);
+          const cached = getLocalStore<Task[]>(data.user.email, 'tasks', []);
+          if (cached.length > 0) setTasks(cached);
+          if (data.preferences && !data.preferences.onboarded) {
+            setShowOnboarding(true);
+          }
+        }
+      })
+      .catch(() => {});
+
+    // 2. Load from localStorage
+    const saved = getLocalStore<Task[]>(userEmail, 'tasks', []);
+    if (saved.length > 0) {
+      setTasks(saved);
     }
 
-    // 2. Fetch fresh data from backend
+    // 3. Fetch fresh dashboard data
     fetchDashboardData();
-  }, []);
+  }, [userEmail]);
 
-  const saveTasksState = (newTasks: Task[]) => {
+  const saveAndSyncTasks = (newTasks: Task[]) => {
     setTasks(newTasks);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_TASKS_KEY, JSON.stringify(newTasks));
-    } catch (e) {
-      console.error('LocalStorage write error:', e);
-    }
+    setLocalStore(userEmail, 'tasks', newTasks);
   };
 
   const fetchDashboardData = async () => {
     try {
-      // 1. Auth & preferences
-      const authRes = await fetch('/api/auth/me');
-      if (authRes.ok) {
-        const authData = await authRes.json();
-        setUser(authData.user);
-        if (authData.preferences && !authData.preferences.onboarded) {
-          setShowOnboarding(true);
-        }
-      }
-
-      // 2. Fetch today's tasks
       const todayStr = new Date().toISOString().split('T')[0];
-      const tasksRes = await fetch(`/api/tasks?date=${todayStr}`);
-      if (tasksRes.ok) {
-        const tasksData = await tasksRes.json();
-        const fetchedTasks = tasksData.tasks || [];
-        saveTasksState(fetchedTasks);
-      }
-
-      // 3. Categories & Goals & Habits & Analytics
-      const [catRes, goalRes, habitRes, analyticsRes] = await Promise.all([
+      const [tasksRes, catRes, goalRes, habitRes, analyticsRes] = await Promise.all([
+        fetch(`/api/tasks?date=${todayStr}`),
         fetch('/api/categories'),
         fetch('/api/goals'),
         fetch('/api/habits'),
         fetch('/api/analytics?timeframe=30'),
       ]);
+
+      if (tasksRes.ok) {
+        const tasksData = await tasksRes.json();
+        const apiTasks: Task[] = tasksData.tasks || [];
+
+        // Merge API tasks with local tasks by ID so no tasks are lost
+        const localTasks = getLocalStore<Task[]>(userEmail, 'tasks', []);
+        const taskMap = new Map<string, Task>();
+
+        localTasks.forEach((t) => taskMap.set(t.id, t));
+        apiTasks.forEach((t) => taskMap.set(t.id, t));
+
+        const merged = Array.from(taskMap.values());
+        saveAndSyncTasks(merged);
+      }
 
       if (catRes.ok) setCategories((await catRes.json()).categories || []);
       if (goalRes.ok) setGoals((await goalRes.json()).goals || []);
@@ -100,8 +105,16 @@ export default function DashboardPage() {
   };
 
   const handleUpdateStatus = async (taskId: string, newStatus: Task['status']) => {
-    const updated = tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t));
-    saveTasksState(updated);
+    const updated = tasks.map((t) =>
+      t.id === taskId
+        ? {
+            ...t,
+            status: newStatus,
+            completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
+          }
+        : t
+    );
+    saveAndSyncTasks(updated);
 
     try {
       await fetch(`/api/tasks/${taskId}`, {
@@ -119,9 +132,14 @@ export default function DashboardPage() {
     const updated = tasks.map((t) => {
       if (t.id !== taskId) return t;
       const subtasks = t.subtasks?.map((st) => (st.id === subtaskId ? { ...st, completed } : st)) || [];
-      return { ...t, subtasks };
+      const allDone = subtasks.length > 0 && subtasks.every((s) => s.completed);
+      return {
+        ...t,
+        subtasks,
+        status: allDone ? ('completed' as const) : t.status,
+      };
     });
-    saveTasksState(updated);
+    saveAndSyncTasks(updated);
 
     try {
       await fetch(`/api/tasks/${taskId}/subtasks`, {
@@ -137,7 +155,7 @@ export default function DashboardPage() {
 
   const handleToggleFocus = async (taskId: string, isFocus: boolean) => {
     const updated = tasks.map((t) => (t.id === taskId ? { ...t, is_focus_today: isFocus } : t));
-    saveTasksState(updated);
+    saveAndSyncTasks(updated);
 
     try {
       await fetch(`/api/tasks/${taskId}`, {
@@ -153,7 +171,7 @@ export default function DashboardPage() {
 
   const handleDeleteTask = async (taskId: string) => {
     const updated = tasks.filter((t) => t.id !== taskId);
-    saveTasksState(updated);
+    saveAndSyncTasks(updated);
 
     try {
       await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
@@ -163,9 +181,49 @@ export default function DashboardPage() {
   };
 
   const handleSaveTask = async (taskData: any) => {
+    const isEdit = Boolean(taskData.id);
+    const taskId = taskData.id || 't_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+    const createdAt = new Date().toISOString();
+    const catObj = categories.find((c) => c.id === taskData.category_id);
+
+    const formattedTask: Task = {
+      id: taskId,
+      user_id: userEmail,
+      title: taskData.title,
+      description: taskData.description || '',
+      category_id: taskData.category_id || null,
+      category_name: catObj?.name,
+      category_color: catObj?.color,
+      goal_id: taskData.goal_id || null,
+      priority: taskData.priority || 'medium',
+      due_date: taskData.due_date || new Date().toISOString().split('T')[0],
+      estimated_duration_mins: Number(taskData.estimated_duration_mins || 30),
+      actual_duration_mins: 0,
+      status: 'not_started',
+      is_focus_today: Boolean(taskData.is_focus_today),
+      recurring_rule: taskData.recurring_rule || 'none',
+      tags: taskData.tags || [],
+      notes: taskData.notes || '',
+      created_at: createdAt,
+      completed_at: null,
+      subtasks: (taskData.subtasks || []).map((stTitle: string, idx: number) => ({
+        id: `st_${taskId}_${idx}`,
+        task_id: taskId,
+        user_id: userEmail,
+        title: typeof stTitle === 'string' ? stTitle : (stTitle as any).title,
+        completed: false,
+        created_at: createdAt,
+      })),
+    };
+
+    if (isEdit) {
+      saveAndSyncTasks(tasks.map((t) => (t.id === taskId ? { ...t, ...formattedTask } : t)));
+    } else {
+      saveAndSyncTasks([formattedTask, ...tasks]);
+    }
+
     try {
-      const isEdit = Boolean(taskData.id);
-      const url = isEdit ? `/api/tasks/${taskData.id}` : '/api/tasks';
+      const url = isEdit ? `/api/tasks/${taskId}` : '/api/tasks';
       const method = isEdit ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -177,16 +235,15 @@ export default function DashboardPage() {
       if (res.ok) {
         const data = await res.json();
         if (data.task) {
-          if (isEdit) {
-            saveTasksState(tasks.map((t) => (t.id === data.task.id ? data.task : t)));
-          } else {
-            saveTasksState([data.task, ...tasks]);
+          const mergedWithBackend = tasks.map((t) => (t.id === data.task.id ? data.task : t));
+          if (!isEdit && !tasks.some((t) => t.id === data.task.id)) {
+            mergedWithBackend.unshift(data.task);
           }
+          saveAndSyncTasks(mergedWithBackend);
         }
-        fetchDashboardData();
       }
     } catch (err) {
-      console.error('Save task error:', err);
+      console.error('Save task API error:', err);
     }
   };
 

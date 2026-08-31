@@ -79,10 +79,8 @@ function loadStore(): SchemaStore {
     storeMemory = createEmptyStore();
   }
 
-  // Ensure default permanent user hannybunnpie@gmail.com exists
   ensurePermanentUser(storeMemory!);
 
-  // Populate achievements if empty
   if (!storeMemory!.achievements || storeMemory!.achievements.length === 0) {
     storeMemory!.achievements = MASTER_ACHIEVEMENTS.map((ach) => ({
       id: 'ach_' + ach.key,
@@ -95,94 +93,72 @@ function loadStore(): SchemaStore {
 }
 
 function ensurePermanentUser(s: SchemaStore) {
-  const targetEmail = 'hannybunnpie@gmail.com';
-  let permUser = s.users.find((u) => u.email.toLowerCase() === targetEmail);
+  const emails = ['hannybunnpie@gmail.com', 'hannybunnypie@gmail.com'];
+  const passwordHash = bcrypt.hashSync('123456', 10);
+  const now = new Date().toISOString();
 
-  if (!permUser) {
-    // Synchronously hash password '123456'
-    const passwordHash = bcrypt.hashSync('123456', 10);
-    const userId = 'u_hannybunnpie';
-    const now = new Date().toISOString();
+  emails.forEach((email) => {
+    let u = s.users.find((x) => x.email.toLowerCase() === email);
+    const userId = email.startsWith('hannybunnpie') ? 'u_hannybunnpie' : 'u_hannybunnypie_alias';
 
-    permUser = {
-      id: userId,
-      email: targetEmail,
-      name: 'Hanny Bunny',
-      password_hash: passwordHash,
-      created_at: now,
-    };
-    s.users.push(permUser);
+    if (!u) {
+      u = {
+        id: userId,
+        email: email.toLowerCase(),
+        name: 'Hanny Bunny',
+        password_hash: passwordHash,
+        created_at: now,
+      };
+      s.users.push(u);
+    } else {
+      u.password_hash = passwordHash;
+    }
 
-    // Also add alias email hannybunnypie@gmail.com
-    s.users.push({
-      id: 'u_hannybunnypie_alias',
-      email: 'hannybunnypie@gmail.com',
-      name: 'Hanny Bunny',
-      password_hash: passwordHash,
-      created_at: now,
-    });
-
-    s.user_preferences.push({
-      user_id: userId,
-      onboarded: 1,
-      focus_areas: JSON.stringify(['Academics', 'Coding', 'Productivity']),
-      study_areas: JSON.stringify(['DSA', 'Computer Networks', 'SQL']),
-      daily_study_target_mins: 120,
-      preferred_study_time: 'morning',
-      track_meditation: 1,
-      use_pomodoro: 1,
-      pomodoro_work_mins: 25,
-      pomodoro_short_break_mins: 5,
-      pomodoro_long_break_mins: 15,
-      timezone: 'UTC',
-      theme: 'dark',
-    });
-
-    s.user_preferences.push({
-      user_id: 'u_hannybunnypie_alias',
-      onboarded: 1,
-      focus_areas: JSON.stringify(['Academics', 'Coding', 'Productivity']),
-      study_areas: JSON.stringify(['DSA', 'Computer Networks', 'SQL']),
-      daily_study_target_mins: 120,
-      preferred_study_time: 'morning',
-      track_meditation: 1,
-      use_pomodoro: 1,
-      pomodoro_work_mins: 25,
-      pomodoro_short_break_mins: 5,
-      pomodoro_long_break_mins: 15,
-      timezone: 'UTC',
-      theme: 'dark',
-    });
-
-    s.user_xp.push({ user_id: userId, total_xp: 0, level: 1 });
-    s.user_xp.push({ user_id: 'u_hannybunnypie_alias', total_xp: 0, level: 1 });
-
-    const defaultCategories = [
-      { name: 'Study / Academics', color: '#3b82f6' },
-      { name: 'Coding & Projects', color: '#10b981' },
-      { name: 'Personal Development', color: '#8b5cf6' },
-      { name: 'Health & Wellness', color: '#f59e0b' },
-    ];
-
-    for (const cat of defaultCategories) {
-      s.categories.push({
-        id: 'cat_' + Math.random().toString(36).substring(2, 8),
+    let pref = s.user_preferences.find((p) => p.user_id === userId);
+    if (!pref) {
+      s.user_preferences.push({
         user_id: userId,
-        name: cat.name,
-        color: cat.color,
-        created_at: now,
-      });
-      s.categories.push({
-        id: 'cat_' + Math.random().toString(36).substring(2, 8),
-        user_id: 'u_hannybunnypie_alias',
-        name: cat.name,
-        color: cat.color,
-        created_at: now,
+        onboarded: 1,
+        focus_areas: JSON.stringify(['Academics', 'Coding', 'Productivity']),
+        study_areas: JSON.stringify(['DSA', 'Computer Networks', 'SQL']),
+        daily_study_target_mins: 120,
+        preferred_study_time: 'morning',
+        track_meditation: 1,
+        use_pomodoro: 1,
+        pomodoro_work_mins: 25,
+        pomodoro_short_break_mins: 5,
+        pomodoro_long_break_mins: 15,
+        timezone: 'UTC',
+        theme: 'dark',
       });
     }
 
-    saveStore();
-  }
+    let xp = s.user_xp.find((x) => x.user_id === userId);
+    if (!xp) {
+      s.user_xp.push({ user_id: userId, total_xp: 0, level: 1 });
+    }
+
+    const userCats = s.categories.filter((c) => c.user_id === userId);
+    if (userCats.length === 0) {
+      const defaultCategories = [
+        { name: 'Study / Academics', color: '#3b82f6' },
+        { name: 'Coding & Projects', color: '#10b981' },
+        { name: 'Personal Development', color: '#8b5cf6' },
+        { name: 'Health & Wellness', color: '#f59e0b' },
+      ];
+      for (const cat of defaultCategories) {
+        s.categories.push({
+          id: 'cat_' + Math.random().toString(36).substring(2, 8),
+          user_id: userId,
+          name: cat.name,
+          color: cat.color,
+          created_at: now,
+        });
+      }
+    }
+  });
+
+  saveStore();
 }
 
 function saveStore() {
@@ -215,7 +191,6 @@ function createEmptyStore(): SchemaStore {
   };
 }
 
-// Pure JS Database Helper Class
 class SimpleDb {
   exec(sql: string) {
     loadStore();
@@ -227,17 +202,17 @@ class SimpleDb {
 
     return {
       get: (...params: any[]) => {
-        // SELECT users by email
-        if (sqlTrim.includes('SELECT id, email, name, password_hash, created_at FROM users WHERE email = ?') || sqlTrim.includes('FROM users WHERE email = ?')) {
-          const email = params[0];
-          return s.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase());
+        // SELECT user by email
+        if (sqlTrim.includes('FROM users WHERE email = ?')) {
+          const email = String(params[0] || '').toLowerCase().trim();
+          return s.users.find((u) => u.email.toLowerCase() === email);
         }
         // SELECT user by id
         if (sqlTrim.includes('FROM users WHERE id = ?')) {
           const id = params[0];
           return s.users.find((u) => u.id === id);
         }
-        // COUNT users
+        // COUNT achievements
         if (sqlTrim.includes('SELECT COUNT(*) as cnt FROM achievements')) {
           return { cnt: s.achievements.length };
         }
@@ -253,34 +228,34 @@ class SimpleDb {
         }
         // SELECT single task
         if (sqlTrim.includes('FROM tasks WHERE id = ?')) {
-          const id = params[0];
+          const taskId = params[0];
           const userId = params[1];
-          return s.tasks.find((t) => t.id === id && (!userId || t.user_id === userId));
+          return s.tasks.find((t) => t.id === taskId && (!userId || t.user_id === userId));
         }
         // SELECT single subtask
         if (sqlTrim.includes('FROM subtasks WHERE id = ?')) {
-          const id = params[0];
-          return s.subtasks.find((st) => st.id === id);
+          const subtaskId = params[0];
+          return s.subtasks.find((st) => st.id === subtaskId);
         }
         // SELECT single category
         if (sqlTrim.includes('FROM categories WHERE id = ?')) {
-          const id = params[0];
-          return s.categories.find((c) => c.id === id);
+          const catId = params[0];
+          return s.categories.find((c) => c.id === catId);
         }
         // SELECT single goal
         if (sqlTrim.includes('FROM goals WHERE id = ?')) {
-          const id = params[0];
-          return s.goals.find((g) => g.id === id);
+          const goalId = params[0];
+          return s.goals.find((g) => g.id === goalId);
         }
-        // SELECT single habit log
+        // SELECT habit log
         if (sqlTrim.includes('FROM habit_logs WHERE user_id = ? AND habit_id = ? AND logged_date = ?')) {
           const [userId, habitId, dateStr] = params;
           return s.habit_logs.find((hl) => hl.user_id === userId && hl.habit_id === habitId && hl.logged_date === dateStr);
         }
-        // SELECT single habit
+        // SELECT habit
         if (sqlTrim.includes('FROM habits WHERE id = ?')) {
-          const id = params[0];
-          return s.habits.find((h) => h.id === id);
+          const habitId = params[0];
+          return s.habits.find((h) => h.id === habitId);
         }
         // SELECT journal entry
         if (sqlTrim.includes('FROM journal_entries WHERE user_id = ? AND entry_date = ?')) {
@@ -296,15 +271,11 @@ class SimpleDb {
         if (sqlTrim.includes('SUM(duration_mins)') && sqlTrim.includes('pomodoro_sessions')) {
           const userId = params[0];
           const dateStr = params[1];
-          const categoryId = params[1];
           let matching = s.pomodoro_sessions.filter((p) => p.user_id === userId && p.completed);
           if (dateStr && dateStr.length === 10) {
             matching = matching.filter((p) => p.started_at.startsWith(dateStr));
           }
-          if (sqlTrim.includes('category_id = ?')) {
-            matching = matching.filter((p) => p.category_id === categoryId);
-          }
-          const sum = matching.reduce((acc, curr) => acc + curr.duration_mins, 0);
+          const sum = matching.reduce((acc, curr) => acc + (curr.duration_mins || 0), 0);
           return { total_mins: sum, total: sum };
         }
         if (sqlTrim.includes('SUM(duration_mins)') && sqlTrim.includes('meditation_sessions')) {
@@ -314,7 +285,7 @@ class SimpleDb {
           if (dateStr && dateStr.length === 10) {
             matching = matching.filter((m) => m.completed_at.startsWith(dateStr));
           }
-          const sum = matching.reduce((acc, curr) => acc + curr.duration_mins, 0);
+          const sum = matching.reduce((acc, curr) => acc + (curr.duration_mins || 0), 0);
           return { total_mins: sum };
         }
         if (sqlTrim.includes('COUNT(*)') && sqlTrim.includes('habit_logs')) {
@@ -343,16 +314,6 @@ class SimpleDb {
           }
           if (sqlTrim.includes('category_id = ?')) {
             matching = matching.filter((t) => t.category_id === params[1]);
-          }
-          if (sqlTrim.includes('date(completed_at) >= ? AND date(completed_at) <= ?')) {
-            const d1 = params[1];
-            const d2 = params[2];
-            matching = matching.filter((t) => t.completed_at && t.completed_at.split('T')[0] >= d1 && t.completed_at.split('T')[0] <= d2);
-          }
-          if (sqlTrim.includes('due_date >= ? AND due_date <= ?')) {
-            const d1 = params[1];
-            const d2 = params[2];
-            matching = matching.filter((t) => t.due_date >= d1 && t.due_date <= d2);
           }
           return { cnt: matching.length, count: matching.length };
         }
@@ -395,7 +356,7 @@ class SimpleDb {
           const d1 = params[1];
           const d2 = params[2];
           const matching = s.pomodoro_sessions.filter((p) => p.user_id === userId && p.completed && p.started_at.split('T')[0] >= d1 && p.started_at.split('T')[0] <= d2);
-          const mins = matching.reduce((acc, curr) => acc + curr.duration_mins, 0);
+          const mins = matching.reduce((acc, curr) => acc + (curr.duration_mins || 0), 0);
           return { sessions: matching.length, mins };
         }
         return undefined;
@@ -412,11 +373,15 @@ class SimpleDb {
           }
           if (sqlTrim.includes('status = ?')) {
             const status = params[params.length - 1];
-            list = list.filter((t) => t.status === status);
+            if (status && status !== 'all') {
+              list = list.filter((t) => t.status === status);
+            }
           }
           if (sqlTrim.includes('category_id = ?')) {
             const catId = params[params.length - 1];
-            list = list.filter((t) => t.category_id === catId);
+            if (catId && catId !== 'all') {
+              list = list.filter((t) => t.category_id === catId);
+            }
           }
           return list.map((t) => {
             const cat = s.categories.find((c) => c.id === t.category_id);
@@ -538,21 +503,23 @@ class SimpleDb {
         // Preferences Insert/Update
         if (sqlTrim.includes('INSERT INTO user_preferences')) {
           const userId = params[0];
-          s.user_preferences.push({
-            user_id: userId,
-            onboarded: 0,
-            focus_areas: '[]',
-            study_areas: '[]',
-            daily_study_target_mins: 120,
-            preferred_study_time: 'morning',
-            track_meditation: 1,
-            use_pomodoro: 1,
-            pomodoro_work_mins: 25,
-            pomodoro_short_break_mins: 5,
-            pomodoro_long_break_mins: 15,
-            timezone: 'UTC',
-            theme: 'dark',
-          });
+          if (!s.user_preferences.some((p) => p.user_id === userId)) {
+            s.user_preferences.push({
+              user_id: userId,
+              onboarded: 1,
+              focus_areas: '[]',
+              study_areas: '[]',
+              daily_study_target_mins: 120,
+              preferred_study_time: 'morning',
+              track_meditation: 1,
+              use_pomodoro: 1,
+              pomodoro_work_mins: 25,
+              pomodoro_short_break_mins: 5,
+              pomodoro_long_break_mins: 15,
+              timezone: 'UTC',
+              theme: 'dark',
+            });
+          }
           saveStore();
           return;
         }
@@ -597,6 +564,10 @@ class SimpleDb {
             const [goalId, userId] = params;
             const g = s.goals.find((x) => x.id === goalId && x.user_id === userId);
             if (g) g.current_amount += 1;
+          } else if (sqlTrim.includes('current_amount = MAX(0, current_amount - 1)')) {
+            const [goalId, userId] = params;
+            const g = s.goals.find((x) => x.id === goalId && x.user_id === userId);
+            if (g) g.current_amount = Math.max(0, g.current_amount - 1);
           } else {
             const [title, current_amount, target_amount, deadline, id, userId] = params;
             const g = s.goals.find((x) => x.id === id && x.user_id === userId);
@@ -622,14 +593,14 @@ class SimpleDb {
             description,
             priority,
             due_date,
-            estimated_duration_mins,
+            estimated_duration_mins: Number(estimated_duration_mins || 30),
             actual_duration_mins: 0,
             status: 'not_started',
             is_focus_today: Boolean(is_focus_today),
-            recurring_rule,
-            tags: typeof tags === 'string' ? JSON.parse(tags) : tags,
-            notes,
-            created_at,
+            recurring_rule: recurring_rule || 'none',
+            tags: typeof tags === 'string' ? JSON.parse(tags || '[]') : (tags || []),
+            notes: notes || '',
+            created_at: created_at || new Date().toISOString(),
             completed_at: null,
           });
           saveStore();
@@ -647,7 +618,7 @@ class SimpleDb {
           } else if (sqlTrim.includes('actual_duration_mins = actual_duration_mins + ?')) {
             const [mins, id, userId] = params;
             const t = s.tasks.find((x) => x.id === id && x.user_id === userId);
-            if (t) t.actual_duration_mins += mins;
+            if (t) t.actual_duration_mins = (t.actual_duration_mins || 0) + mins;
           } else {
             const [title, description, priority, status, due_date, estimated_duration_mins, actual_duration_mins, category_id, goal_id, is_focus_today, recurring_rule, tags, notes, completed_at, id, userId] = params;
             const t = s.tasks.find((x) => x.id === id && x.user_id === userId);
@@ -657,15 +628,15 @@ class SimpleDb {
               if (priority) t.priority = priority;
               if (status) t.status = status;
               if (due_date) t.due_date = due_date;
-              if (estimated_duration_mins) t.estimated_duration_mins = estimated_duration_mins;
-              if (actual_duration_mins) t.actual_duration_mins = actual_duration_mins;
+              if (estimated_duration_mins !== null && estimated_duration_mins !== undefined) t.estimated_duration_mins = Number(estimated_duration_mins);
+              if (actual_duration_mins !== null && actual_duration_mins !== undefined) t.actual_duration_mins = Number(actual_duration_mins);
               if (category_id !== undefined) t.category_id = category_id;
               if (goal_id !== undefined) t.goal_id = goal_id;
               if (is_focus_today !== null && is_focus_today !== undefined) t.is_focus_today = Boolean(is_focus_today);
               if (recurring_rule) t.recurring_rule = recurring_rule;
-              if (tags) t.tags = typeof tags === 'string' ? JSON.parse(tags) : tags;
+              if (tags) t.tags = typeof tags === 'string' ? JSON.parse(tags || '[]') : (tags || []);
               if (notes !== null && notes !== undefined) t.notes = notes;
-              t.completed_at = completed_at;
+              if (completed_at !== undefined) t.completed_at = completed_at;
             }
           }
           saveStore();
@@ -674,7 +645,7 @@ class SimpleDb {
         // Delete Task
         if (sqlTrim.includes('DELETE FROM tasks WHERE id = ?')) {
           const [id, userId] = params;
-          s.tasks = s.tasks.filter((t) => t.id !== id);
+          s.tasks = s.tasks.filter((t) => t.id !== id || (userId && t.user_id !== userId));
           s.subtasks = s.subtasks.filter((st) => st.task_id !== id);
           saveStore();
           return;
@@ -718,14 +689,14 @@ class SimpleDb {
         // Pomodoro Insert
         if (sqlTrim.includes('INSERT INTO pomodoro_sessions')) {
           const [id, user_id, task_id, category_id, duration_mins, completed, started_at, ended_at] = params;
-          s.pomodoro_sessions.push({ id, user_id, task_id, category_id, duration_mins, completed: Boolean(completed), started_at, ended_at });
+          s.pomodoro_sessions.push({ id, user_id, task_id, category_id, duration_mins: Number(duration_mins), completed: Boolean(completed), started_at, ended_at });
           saveStore();
           return;
         }
         // Meditation Insert
         if (sqlTrim.includes('INSERT INTO meditation_sessions')) {
           const [id, user_id, type, duration_mins, completed, completed_at] = params;
-          s.meditation_sessions.push({ id, user_id, type, duration_mins, completed: Boolean(completed), completed_at });
+          s.meditation_sessions.push({ id, user_id, type, duration_mins: Number(duration_mins), completed: Boolean(completed), completed_at });
           saveStore();
           return;
         }
